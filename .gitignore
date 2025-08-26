@@ -1,0 +1,17 @@
+
+# Python venv
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# Docker volumes
+grafana-data/
+postgres-data/
+
+# VSCode settings (如果有)
+.vscode/
