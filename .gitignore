@@ -17,3 +17,5 @@ postgres-data/
 .vscode/
 
 test/
+
+binance-connector-python-master/
