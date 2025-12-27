@@ -17,3 +17,6 @@
 3. 即時的 openinterest 資料 從前m根到現在的
 4. 即時的 longshort ratio
 5. 即時的 toptrader long short ratio
+
+### 回測框架
+1. 建立一個 sandbox 可以做實驗
