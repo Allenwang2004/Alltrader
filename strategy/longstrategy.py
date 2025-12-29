@@ -10,7 +10,7 @@ class LongStrategy(Strategy):
 
     def generate_signals(self, df_1h: pd.DataFrame, df_15m: pd.DataFrame) -> pd.Series:
         if 'close' not in df_1h or 'close' not in df_15m:
-            raise ValueError("DataFrame 必須包含 'close' 及 'close' 欄位")
+            raise ValueError("DataFrame 必須包含 'close' 欄位")
 
         ema_fast_1h = df_1h['close'].ewm(span=self.fast, adjust=False).mean()
         ema_slow_1h = df_1h['close'].ewm(span=self.slow, adjust=False).mean()

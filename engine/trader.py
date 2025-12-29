@@ -7,7 +7,7 @@ from engine.online.rms import RiskManager
 from connector.okx_kline import OKXKlineFetcher, fetch_futures_klines
 from connector.okx_ws_ticker import OKXWsTicker
 from datawarehouse.kline_db import insert_kline, fetch_klines_from_db, listen_and_store_kline, fetch_multi_interval_closes_from_db
-from strategy.long import LongStrategy
+from strategy.longstrategy import LongStrategy
 
 class TradingState:
     SIGNAL = 'signal'

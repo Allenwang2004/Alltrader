@@ -10,6 +10,7 @@ from connector import binance_order
 import threading
 from connector.okx_kline import OKXKlineFetcher
 from datawarehouse.kline_db import insert_kline
+from strategy.longstrategy import LongStrategy
 from engine.trader import trading_main
 import pandas as pd
 
@@ -211,12 +212,21 @@ class TradeApp(App):
             log.write("請先輸入 symbol")
             return
         self.symbol = symbol
+        found = False
         for cname, sname in get_strategy_classes():
-            if sname == selected_strategy:
-                module = importlib.import_module(f"strategy.{cname.lower()}")
-                self.strategy_class = getattr(module, cname)
-                self.strategy_name = sname
+            # Select.value contains the second tuple element (we set value=cname)
+            if cname == selected_strategy:
+                try:
+                    module = importlib.import_module(f"strategy.{cname.lower()}")
+                    self.strategy_class = getattr(module, cname)
+                    self.strategy_name = sname
+                    found = True
+                except Exception as e:
+                    log.write(f"Load error: {e}")
                 break
+        if not found:
+            log.write(f"Cannot find strategy: {selected_strategy}")
+            return
         main = self.query_one("#left")
         main.remove_children()
         main.mount(MainMenu(id="main_menu"))
