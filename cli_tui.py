@@ -7,6 +7,11 @@ from utils.strategy_utils import get_strategy_classes
 from textual.containers import Container, Horizontal
 from connector.okx_order import OKXOrderClient
 from connector import binance_order
+import threading
+from connector.okx_kline import OKXKlineFetcher
+from datawarehouse.kline_db import insert_kline
+from engine.trader import trading_main
+import pandas as pd
 
 class LogPanel(Static):
     def __init__(self, text: str = "", max_lines: int = 200, **kwargs):
@@ -97,6 +102,7 @@ class TradeApp(App):
         self.account_info = None
         self.strategy_class = None
         self.strategy_name = None
+        self.trading_thread = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -140,14 +146,22 @@ class TradeApp(App):
         if not symbol or not interval:
             log.write("請輸入 symbol 與 interval")
             return
-        import threading
-        from connector.okx_kline import OKXKlineFetcher
-        from datawarehouse.kline_db import insert_kline
-        import pandas as pd
+        fetcher = OKXKlineFetcher(market_type="futures")
+        klines = fetcher.fetch_klines(symbol=symbol, interval=interval, limit=300)
+        df = pd.DataFrame(klines, columns=["timestamp", "open_price", "high_price", "low_price", "close_price", "volume"])
+        df.rename(columns={
+            "open_price": "open",
+            "high_price": "high",
+            "low_price": "low",
+            "close_price": "close",
+            "volume": "volume",
+        }, inplace=True)
+        for _, row in df.iterrows():
+            insert_kline(symbol, interval, row.to_dict())
+        log.write(f"inserted {len(df)} historical klines for {symbol} {interval}")
         def record_loop():
             import time
-            fetcher = OKXKlineFetcher(market_type="futures")
-            last_ts = None
+            last_ts = df.index[-1]
             while True:
                 try:
                     klines = fetcher.fetch_klines(symbol=symbol, interval=interval, limit=1)
@@ -197,7 +211,6 @@ class TradeApp(App):
             log.write("請先輸入 symbol")
             return
         self.symbol = symbol
-        # 反射取得 class
         for cname, sname in get_strategy_classes():
             if sname == selected_strategy:
                 module = importlib.import_module(f"strategy.{cname.lower()}")
@@ -207,6 +220,21 @@ class TradeApp(App):
         main = self.query_one("#left")
         main.remove_children()
         main.mount(MainMenu(id="main_menu"))
+        log = self.query_one(LogPanel)
+        if getattr(self, 'trading_thread', None) and self.trading_thread.is_alive():
+            log.write("trading is running, ignore start request")
+            return
+        intervals = ["1h", "15m"]
+        window = 100
+        def _run():
+            try:
+                trading_main(self.strategy_class, self.api_key, self.api_secret, self.passphrase, self.symbol, intervals, window)
+            except Exception as e:
+                log.write(f"trading main error: {e}")
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        self.trading_thread = t
+        log.write(f"Started: strategy={self.strategy_name} symbol={self.symbol} intervals={intervals}")
 
     def query_account(self):
         log = self.query_one(LogPanel)

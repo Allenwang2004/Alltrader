@@ -29,6 +29,7 @@ from typing import Dict, Any, Optional, List, Union, Literal
 from enum import Enum
 import logging
 from dotenv import load_dotenv
+from urllib.parse import urlencode
 
 # Load environment variables from .env file
 load_dotenv()
@@ -113,6 +114,8 @@ class OKXOrderClient:
     FUTURES_POSITION_ENDPOINT = "/api/v5/account/positions"
     FUTURES_LEVERAGE_ENDPOINT = "/api/v5/account/set-leverage"
     FUTURES_MARGIN_MODE_ENDPOINT = "/api/v5/account/set-margin-mode"
+    FUTURES_INSTRUMENT_INFO_ENDPOINT = "/api/v5/account/instruments"
+    FUTURES_POSITION_INFO_ENDPOINT = "/api/v5/account/positions"
 
     def __init__(
         self,
@@ -174,7 +177,8 @@ class OKXOrderClient:
         Returns:
             str: Current timestamp in ISO 8601 format
         """
-        return datetime.utcnow().isoformat()[:-3] + 'Z'
+        # OKX expects ISO8601 UTC timestamp with milliseconds, e.g. 2025-12-28T14:30:12.345Z
+        return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
     def _generate_signature(self, timestamp: str, method: str, endpoint: str, body: str = "") -> str:
         """
@@ -232,8 +236,17 @@ class OKXOrderClient:
             import json
             body = json.dumps(data, separators=(',', ':'))
 
-        # Generate signature
-        signature = self._generate_signature(timestamp, method, endpoint, body)
+        # Build request path (endpoint + optional query string) for signature
+        query = ""
+        if params:
+            # OKX signature requires the exact query string included in the request path.
+            # Use URL encoding and a stable order.
+            query = urlencode(sorted(params.items()), doseq=True)
+
+        request_path = endpoint + (f"?{query}" if query else "")
+
+        # Generate signature (NOTE: must sign request_path, not just endpoint)
+        signature = self._generate_signature(timestamp, method, request_path, body)
 
         # Update headers
         self.session.headers.update({
@@ -241,9 +254,7 @@ class OKXOrderClient:
             "OK-ACCESS-TIMESTAMP": timestamp
         })
 
-        url = f"{self.base_url}{endpoint}"
-        if params:
-            url += "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+        url = f"{self.base_url}{request_path}"
 
         try:
             if method.upper() == "GET":
@@ -456,7 +467,7 @@ class OKXOrderClient:
         # Build request data
         data = {
             "instId": inst_id,
-            "tdMode": "cross",  # Cross margin by default
+            "tdMode": "isolated",  # Futures trading mode
             "side": side,
             "ordType": order_type,
             "sz": str(size)
@@ -488,7 +499,7 @@ class OKXOrderClient:
         symbol: str,
         side: Union[str, OrderSide],
         size: Union[str, float],
-        position_side: Union[str, PositionSide] = PositionSide.NET,
+        position_side: Union[str, PositionSide],
         reduce_only: bool = False
     ) -> Dict[str, Any]:
         """
@@ -776,6 +787,42 @@ class OKXOrderClient:
 
         return self._make_signed_request("POST", self.FUTURES_MARGIN_MODE_ENDPOINT, data=data)
 
+    # def get_instruments(self, symbol: str, inst_type: str) -> Dict[str, Any]:
+    #     """Retrieve instrument metadata (public endpoint).
+
+    #     For SWAP instruments, OKX requires `instType=SWAP`.
+
+    #     Args:
+    #         symbol (str): Trading symbol, e.g. 'BTC-USDT'
+    #     Returns:
+    #         Dict: Instruments information
+    #     """
+    #     if self.market_type != "futures":
+    #         raise ValueError("This method is only available for futures market")
+
+    #     inst_id = self._get_inst_id(symbol)
+    #     return self._make_signed_request(
+    #         "GET",
+    #         self.FUTURES_INSTRUMENT_INFO_ENDPOINT,
+    #         params={"instType": inst_type, "instId": inst_id},
+    #     )
+
+    # def get_position(self) -> Dict[str, Any]:
+    #     """Retrieve position information for a given instrument ID.
+
+    #     Args:
+    #         instid (str): Instrument ID, e.g. 'BTC-USDT-SWAP'
+
+    #     Returns:
+    #         Dict: Position information
+    #     """
+    #     if self.market_type != "futures":
+    #         raise ValueError("This method is only available for futures market")
+
+    #     return self._make_signed_request(
+    #         "GET",
+    #         self.FUTURES_POSITION_ENDPOINT
+    #     )
 
 # ==================== CONVENIENCE FUNCTIONS ====================
 
@@ -831,3 +878,21 @@ def create_futures_client(
         market_type="futures",
         testnet=testnet
     )
+
+
+if __name__ == "__main__":
+    client = create_futures_client()
+    # Example: Place a futures market order
+    # response = client.get_account_info()
+    # print(response)
+    # response = client.place_futures_market_order(
+    #     symbol="BTC-USDT",
+    #     side=OrderSide.SELL,
+    #     size=0.01,
+    #     position_side=PositionSide.LONG,
+    #     reduce_only=False
+    # )
+    # print(response)
+    # Example: Get futures positions
+    response = client.get_futures_positions("BTC-USDT")
+    print(response)

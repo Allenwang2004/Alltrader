@@ -1,12 +1,13 @@
 import sys, os, time, pandas as pd
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from typing import Type
 from connector.okx_order import OKXOrderClient
 from engine.online.oms import OrderManager
 from engine.online.rms import RiskManager
 from connector.okx_kline import OKXKlineFetcher, fetch_futures_klines
-from connector.okx_ws_ticker import OKXWebSocketTicker
+from connector.okx_ws_ticker import OKXWsTicker
 from datawarehouse.kline_db import insert_kline, fetch_klines_from_db, listen_and_store_kline, fetch_multi_interval_closes_from_db
-from strategy.simple_entry_exit_strategy import SimpleEntryExitStrategy
+from strategy.long import LongStrategy
 
 class TradingState:
     SIGNAL = 'signal'
@@ -17,7 +18,6 @@ def wait_order_filled(order_client, symbol, order_id, poll_interval=1, timeout=3
     start = time.time()
     while time.time() - start < timeout:
         info = order_client.get_order(symbol, order_id=order_id)
-        # 根據 OKX 回傳格式判斷成交
         status = info.get('data', [{}])[0].get('state')
         if status in ('filled', 'partially_filled', 'success', '2'):  # 2=成交
             return True
@@ -26,7 +26,8 @@ def wait_order_filled(order_client, symbol, order_id, poll_interval=1, timeout=3
 
 def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: str, symbol: str, intervals: list, window: int = 100):
     okx_client = OKXOrderClient(api_key, api_secret, passphrase)
-    ws = OKXWebSocketTicker(symbol=symbol)
+    ws = OKXWsTicker(symbol)
+    ws.start()
     order_manager = OrderManager(okx_client)
     risk_manager = RiskManager()
     state = TradingState.SIGNAL
@@ -37,13 +38,9 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
         if state == TradingState.SIGNAL:
             df_15m = fetch_klines_from_db(symbol, '15m', window)
             df_1H = fetch_klines_from_db(symbol, '1H', window)
-            if df_15m is None or len(df_15m) < window:
-                print("Insufficient data, waiting...")
-                time.sleep(60)
-                continue
             strategy = strategy_cls()
             signal = strategy.generate_signals(df_15m, df_1H).iloc[-1]
-            current_price = ws.get_latest_price()
+            current_price = ws.get_last_price()
             print(f"Latest signal: {signal}")
             if signal == 1:
                 order_side = 'long'
@@ -111,3 +108,11 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
                 state = TradingState.OMS
                 continue
             time.sleep(1)
+
+if __name__ == "__main__":
+    api_key = os.getenv("OKX_API_KEY")
+    api_secret = os.getenv("OKX_API_SECRET")
+    passphrase = os.getenv("OKX_API_PASSPHRASE")
+    symbol = "BTC-USDT"
+    intervals = ['15m', '1H']
+    trading_main(LongStrategy, api_key, api_secret, passphrase, symbol, intervals)

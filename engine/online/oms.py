@@ -3,7 +3,7 @@ from connector.okx_order import OrderSide, PositionSide
 
 class OrderManager:
 	def __init__(self, client, max_retries=3, retry_delay=2):
-		self.client = client  # OKXOrderClient
+		self.client = client
 		self.max_retries = max_retries
 		self.retry_delay = retry_delay
 
