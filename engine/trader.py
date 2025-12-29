@@ -99,7 +99,7 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
                     oms_price = current_price
                     state = TradingState.OMS
                     continue
-            # 止盈
+
             if risk_manager.check_take_profit(current_price, position):
                 print("[RMS] 觸發止盈，全部平倉")
                 oms_action = 'close_long' if position == 1 else 'close_short'
