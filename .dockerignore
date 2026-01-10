@@ -1,0 +1,7 @@
+.git
+.gitignore
+postgres-data
+grafana-data
+__pycache__
+*.pyc
+.env

@@ -111,4 +111,3 @@ If you'd like, I can also:
 - Add CLI flags to `cli_tui.py` to preconfigure intervals and windows
 - Add a small README section showing how to create OKX demo API keys
 - Add unit tests for `fetch_multi_interval_closes_from_db`
-

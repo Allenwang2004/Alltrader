@@ -6,9 +6,9 @@ services:
     container_name: postgres-db
     restart: always
     environment:
-      POSTGRES_USER: grafana
-      POSTGRES_PASSWORD: "0321"
-      POSTGRES_DB: grafana
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: 0107
+      POSTGRES_DB: live_trade_db
     ports:
       - "5434:5432"
     # volumes:
@@ -27,3 +27,11 @@ services:
     #   - ./grafana-data:/var/lib/grafana
     depends_on:
       - postgres
+
+  live_trade:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: live_trade_app
+    restart: always
+    working_dir: /live_trade
