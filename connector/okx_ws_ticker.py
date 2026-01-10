@@ -18,7 +18,7 @@ class OKXWsTicker:
         data = json.loads(message)
         if 'data' in data and len(data['data']) > 0:
             self.last_price = float(data['data'][0].get('last', 0))
-            print(f"[OKX WS] {self.symbol} 最新價: {self.last_price}")
+            # print(f"[OKX WS] {self.symbol} 最新價: {self.last_price}")
 
     def _on_error(self, ws, error):
         print(f"[OKX WS] Error: {error}")

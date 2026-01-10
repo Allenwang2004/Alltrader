@@ -2,7 +2,7 @@ import sys, os, time, pandas as pd
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from typing import Type
 from connector.okx_order import OKXOrderClient
-from engine.online.oms import OrderManager
+from engine.online.oms import OrderManager, wait_order_filled
 from engine.online.rms import RiskManager
 from connector.okx_kline import OKXKlineFetcher, fetch_futures_klines
 from connector.okx_ws_ticker import OKXWsTicker
@@ -14,17 +14,7 @@ class TradingState:
     OMS = 'oms'
     RMS = 'rms'
 
-def wait_order_filled(order_client, symbol, order_id, poll_interval=1, timeout=30):
-    start = time.time()
-    while time.time() - start < timeout:
-        info = order_client.get_order(symbol, order_id=order_id)
-        status = info.get('data', [{}])[0].get('state')
-        if status in ('filled', 'partially_filled', 'success', '2'):  # 2=成交
-            return True
-        time.sleep(poll_interval)
-    return False
-
-def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: str, symbol: str, intervals: list, window: int = 100):
+def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: str, symbol: str, intervals: list, window: int = 100, qty: float = 1):
     okx_client = OKXOrderClient(api_key, api_secret, passphrase)
     ws = OKXWsTicker(symbol)
     ws.start()
@@ -36,22 +26,27 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
     print("Starting trading state machine...")
     while True:
         if state == TradingState.SIGNAL:
+            # db_read_time = time.time()
             df_15m = fetch_klines_from_db(symbol, '15m', window)
-            df_1H = fetch_klines_from_db(symbol, '1H', window)
+            df_1h = fetch_klines_from_db(symbol, '1H', window)
+            # db_end_time = time.time()
+            # print(f"[SIGNAL] DB read time: {db_end_time - db_read_time:.2f}s")
             strategy = strategy_cls()
-            signal = strategy.generate_signals(df_15m, df_1H).iloc[-1]
+            # generate_singals_start = time.time()
+            signal = strategy.generate_signals(df_1h, df_15m).iloc[-1]
+            # generate_singals_end = time.time()
+            # print(f"[SIGNAL] Signal generation time: {generate_singals_end - generate_singals_start:.2f}s")
             current_price = ws.get_last_price()
-            print(f"Latest signal: {signal}")
             if signal == 1:
                 order_side = 'long'
             elif signal == -1:
                 order_side = 'short'
             else:
-                time.sleep(5)
+                time.sleep(1)
                 continue
             state = TradingState.OMS
             oms_action = order_side
-            oms_qty = 1
+            oms_qty = qty
             oms_price = current_price
         elif state == TradingState.OMS:
             print(f"[OMS] execute order: {oms_action}")
@@ -66,16 +61,17 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
             else:
                 resp = None
             order_id = None
+            # Extract order_id from response
             if resp and 'data' in resp and len(resp['data']) > 0:
                 order_id = resp['data'][0].get('ordId')
             if order_id:
                 filled = wait_order_filled(okx_client, symbol, order_id)
                 if not filled:
-                    print("[OMS] 訂單未成交，重試/跳過...")
+                    print("[OMS] order is not filled in time, retrying...")
                     state = TradingState.SIGNAL
                     continue
             else:
-                print("[OMS] 無法取得 order_id 重試/跳過...")
+                print("[OMS] No order_id found in response, moving to SIGNAL state")
                 state = TradingState.SIGNAL
                 continue
             if oms_action in ('long', 'short'):
@@ -91,9 +87,9 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
             current_price = ws.get_latest_price()
             print(f"[RMS] entry={entry_price} price={current_price} pos={position}")
             if risk_manager.should_add_position(entry_price, current_price, position):
-                qty = risk_manager.add_position(current_price, 1)
+                qty = risk_manager.add_position(current_price, base_qty=qty)
                 if qty:
-                    print(f"[RMS] 補倉 qty={qty}")
+                    print(f"[RMS] adding position, qty={qty}")
                     oms_action = 'long' if position == 1 else 'short'
                     oms_qty = qty
                     oms_price = current_price
@@ -101,9 +97,9 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
                     continue
 
             if risk_manager.check_take_profit(current_price, position):
-                print("[RMS] 觸發止盈，全部平倉")
+                print("[RMS] taking profit, closing position")
                 oms_action = 'close_long' if position == 1 else 'close_short'
-                oms_qty = 1  # 假設全平
+                oms_qty = qty  # 假設全平
                 oms_price = current_price
                 state = TradingState.OMS
                 continue

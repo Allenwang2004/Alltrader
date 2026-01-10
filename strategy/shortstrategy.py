@@ -8,16 +8,16 @@ class ShortStrategy(Strategy):
         self.signal = signal
         self.strategy_name = "MACD_1h_15m_EMA_short"
 
-    def generate_signals(self, df: pd.DataFrame) -> pd.Series:
-        if 'close' not in df or 'close' not in df:
+    def generate_signals(self, df_1h: pd.DataFrame, df_15m: pd.DataFrame) -> pd.Series:
+        if 'close' not in df_1h or 'close' not in df_15m:
             raise ValueError("DataFrame 必須包含 'close' 欄位")
 
-        ema_fast_1h = df['close_1h'].ewm(span=self.fast, adjust=False).mean()
-        ema_slow_1h = df['close_1h'].ewm(span=self.slow, adjust=False).mean()
+        ema_fast_1h = df_1h['close'].ewm(span=self.fast, adjust=False).mean()
+        ema_slow_1h = df_1h['close'].ewm(span=self.slow, adjust=False).mean()
         macd_1h = ema_fast_1h - ema_slow_1h
         macd_cond = macd_1h < 0
 
-        c15 = df['close_15m']
+        c15 = df_15m['close']
         pattern = (c15.shift(3) < c15.shift(2)) & (c15.shift(2) < c15.shift(1)) & (c15.shift(1) > c15)
 
         ema4_15m = c15.ewm(span=4, adjust=False).mean()

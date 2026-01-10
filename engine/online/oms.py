@@ -1,6 +1,16 @@
 import time
 from connector.okx_order import OrderSide, PositionSide
 
+def wait_order_filled(order_client, symbol, order_id, poll_interval=1, timeout=30):
+    start = time.time()
+    while time.time() - start < timeout:
+        info = order_client.get_order(symbol, order_id=order_id)
+        status = info.get('data', [{}])[0].get('state')
+        if status in ('filled', 'partially_filled', 'success', '2'):  # 2=成交
+            return True
+        time.sleep(poll_interval)
+    return False
+
 class OrderManager:
 	def __init__(self, client, max_retries=3, retry_delay=2):
 		self.client = client

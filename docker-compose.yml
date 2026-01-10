@@ -11,8 +11,8 @@ services:
       POSTGRES_DB: live_trade_db
     ports:
       - "5434:5432"
-    # volumes:
-    #   - ./postgres-data:/var/lib/postgresql/data
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
 
   grafana:
     image: grafana/grafana-oss:latest
@@ -23,8 +23,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
-    # volumes:
-    #   - ./grafana-data:/var/lib/grafana
+    volumes:
+      - ./grafana-data:/var/lib/grafana
     depends_on:
       - postgres
 
@@ -34,4 +34,10 @@ services:
       dockerfile: Dockerfile
     container_name: live_trade_app
     restart: always
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5434
+      DB_NAME: live_trade_db
+      DB_USER: trader
+      DB_PASSWORD: 0107
     working_dir: /live_trade
