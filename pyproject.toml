@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "binance-sdk-derivatives-trading-usds-futures>=1.8.0",
     "binance-sdk-spot>=3.0.0",
+    "ccxt>=4.5.32",
     "pandas>=2.3.3",
     "psycopg2-binary>=2.9.11",
     "python-binance>=1.0.34",

@@ -3,8 +3,7 @@ class RiskManager:
     def __init__(self):
         # layer_index: (multiplier, reverse_pct)）
         self.layers = [
-            (1, 0.01),   # #1
-            (1, 0.02),   # #2
+            (1, 0.01),   # #2
             (2, 0.02),   # #3
             (4, 0.02),   # #4
             (2, 0.02),   # #5
@@ -84,7 +83,6 @@ class RiskManager:
 
         tp_pct, trail_pct = self.tp_rules[layer_idx]
 
-        # 決定使用哪種均價
         if layer_idx <= 6:
             base_price = self._avg_price()
         else:
@@ -95,11 +93,9 @@ class RiskManager:
         else:  # short
             pnl_pct = (base_price - current_price) / base_price
 
-        # 尚未達到 TP
         if pnl_pct < tp_pct:
             return False
 
-        # 啟動移動止盈
         if self.trailing_peak is None:
             self.trailing_peak = pnl_pct
             return False

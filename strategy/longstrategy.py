@@ -8,7 +8,7 @@ class LongStrategy(Strategy):
         self.signal = signal
         self.strategy_name = "MACD_1h_15m_EMA_long"
 
-    def generate_signals(self, df_1h: pd.DataFrame, df_15m: pd.DataFrame) -> pd.Series:
+    def generate_signals(self, df_15m: pd.DataFrame, df_1h: pd.DataFrame) -> pd.Series:
         if 'close' not in df_1h or 'close' not in df_15m:
             raise ValueError("DataFrame 必須包含 'close' 欄位")
 
@@ -24,6 +24,6 @@ class LongStrategy(Strategy):
         ema16_15m = c15.ewm(span=16, adjust=False).mean()
         ema_cond = ema4_15m > ema16_15m
 
-        entry = macd_cond & pattern & ema_cond
+        entry = macd_cond | pattern | ema_cond
         signal = entry.astype(int)
-        return signal
+        return signal.iloc[-1]

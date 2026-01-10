@@ -33,7 +33,7 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
             # print(f"[SIGNAL] DB read time: {db_end_time - db_read_time:.2f}s")
             strategy = strategy_cls()
             # generate_singals_start = time.time()
-            signal = strategy.generate_signals(df_1h, df_15m).iloc[-1]
+            signal = strategy.generate_signals(df_1h, df_15m)
             # generate_singals_end = time.time()
             # print(f"[SIGNAL] Signal generation time: {generate_singals_end - generate_singals_start:.2f}s")
             current_price = ws.get_last_price()
