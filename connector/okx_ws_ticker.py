@@ -3,6 +3,7 @@ import threading
 import json
 import time
 from typing import Callable, Dict, List, Optional
+from queue import Queue
 
 class OKXWsTicker:
     def __init__(self, symbol: str, channel: str = "tickers", inst_type: str = "SWAP"):
@@ -64,70 +65,63 @@ class OKXWsTicker:
         return self.last_price
     
 class OKXWsKline:
-    def __init__(self, symbol: str, channel: str = "candle1m", inst_type: str = "SWAP"):
+    def __init__(self, symbol: str, interval: str, confirm_queue: Queue):
         self.symbol = symbol.replace('_', '-').upper()
-        self.channel = channel
-        self.inst_type = inst_type
+        self.interval = interval            # e.g. "15m", "1H"
+        self.channel = f"candle{interval}"
+        self.inst_type = "SWAP"
         self.ws_url = "wss://ws.okx.com:8443/ws/v5/business"
-        self.last_price = None
-        self.confirm = '0'
+
+        self.confirm_queue = confirm_queue
         self._ws = None
         self._thread = None
-        self._stop = threading.Event()
 
     def _on_message(self, ws, message):
         data = json.loads(message)
-        if 'data' in data and len(data['data']) > 0:
-            self.last_price = float(data['data'][0][4])
-            self.confirm = data['data'][0][8]
+        if "data" not in data:
+            return
 
-    def _on_error(self, ws, error):
-        print(f"[OKX WS] Error: {error}")
+        k = data["data"][0]
+        confirm = k[8]
 
-    def _on_close(self, ws, close_status_code, close_msg):
-        print(f"[OKX WS] Closed: {close_status_code} {close_msg}")
+        if confirm == "1":
+            bar = {
+                "ts": int(k[0]),
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+                "volume": float(k[5]),
+                "interval": self.interval
+            }
+            self.confirm_queue.put(bar)
 
     def _on_open(self, ws):
         sub = {
             "op": "subscribe",
-            "args": [
-                {
-                    "channel": self.channel,
-                    "instId": f"{self.symbol}-{self.inst_type}"
-                }
-            ]
+            "args": [{
+                "channel": self.channel,
+                "instId": f"{self.symbol}-{self.inst_type}"
+            }]
         }
         ws.send(json.dumps(sub))
-        print(f"[OKX WS] 訂閱: {sub}")
+        print(f"[WS] subscribed {self.channel}")
 
     def start(self):
         def run():
             self._ws = websocket.WebSocketApp(
                 self.ws_url,
                 on_open=self._on_open,
-                on_message=self._on_message,
-                on_error=self._on_error,
-                on_close=self._on_close
+                on_message=self._on_message
             )
             self._ws.run_forever()
+
         self._thread = threading.Thread(target=run, daemon=True)
         self._thread.start()
 
     def stop(self):
-        self._stop.set()
         if self._ws:
             self._ws.close()
-        if self._thread:
-            self._thread.join()
-
-    def get_last_price(self):
-        return self.last_price
-    
-    def is_confirmed(self):
-        if self.confirm == '1':
-            return True
-        else:
-            return False
 
 
 if __name__ == "__main__":
@@ -140,14 +134,26 @@ if __name__ == "__main__":
     # except KeyboardInterrupt:
     #     ws_ticker.stop()
     
-    ws_kline = OKXWsKline("BTC-USDT")
+    confirm_queue = Queue()
+
+    ws_kline = OKXWsKline(
+        "BTC-USDT",
+        confirm_queue=confirm_queue
+    )
     ws_kline.start()
+
+    confirmed_klines = []
+
     try:
         while True:
-            if ws_kline.is_confirmed():
-                print(f"即時K線收盤價: {ws_kline.get_last_price()}")
-            else:
-                print("K線尚未確認")
-            time.sleep(2)
+            k = confirm_queue.get()
+            confirmed_klines.append(k)
+
+            print(
+                f"[MAIN] 收到第 {len(confirmed_klines)} 根 confirmed K 線 "
+                f"close={k['close']}"
+            )
+
     except KeyboardInterrupt:
-        ws_kline.stop()                    
+        ws_kline.stop()
+        print("總 confirmed K 線數:", len(confirmed_klines))

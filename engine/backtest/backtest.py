@@ -14,9 +14,11 @@ class Backtester:
         self.fee = fee
         self.results = None
         self.trade_records = []
+        self.equity_curve = []
 
-    def run_dynamic(self, window_1m: int = 6000, step: int = 60, base_qty: float = 1, leverage: float = 1) -> list:
+    def run_dynamic(self, window_1m: int = 6000, base_qty: float = 1, leverage: float = 1) -> list:
         self.trade_records = []
+        self.equity_curve = []
         df_1m = self.df_1m
         if len(df_1m) < 6000:
             raise ValueError("需要至少6000根1min數據")
@@ -48,6 +50,17 @@ class Backtester:
         current_position = 0
         risk_manager = None
         entry_price = None
+        realized_pnl = 0.0
+
+        # Add equity curve for initial 6000 bars (no position)
+        for i in range(6000):
+            self.equity_curve.append({
+                'timestamp': df_1m.iloc[i]['timestamp'],
+                'idx': i,
+                'realized_pnl': 0.0,
+                'unrealized_pnl': 0.0,
+                'total_pnl': 0.0
+            })
 
         while current_idx < len(df_1m):
             new_1m = df_1m.iloc[current_idx]
@@ -109,14 +122,18 @@ class Backtester:
                 if check_liquidation:
                     print("強平出場:", current_position, "價格:", exit_price, "時間:", new_1m['timestamp'])
                     total_qty = sum(p['qty'] for p in risk_manager.positions)
-                    pnl = -total_qty  # 代表強平，損失為總倉位價值
+                    # 強平損失 = 倉位價值 * leverage (100%虧損)
+                    pnl = -total_qty * leverage
                     # pnl -= pnl* self.fee
                     self.trade_records.append({
-                        'entry_idx': entry_idx,
-                        'exit_idx': current_idx,
+                        'average_entry': avg_entry,
+                        'exit_price': exit_price,
+                        'total_qty': total_qty,
                         'pnl': pnl,
-                        'position': current_position
+                        'position': current_position,
+                        'exit_idx': current_idx,
                     })
+                    realized_pnl += pnl
                     current_position = 0
                     risk_manager = None
                     entry_price = None
@@ -132,11 +149,14 @@ class Backtester:
                         pnl = (exit_price - avg_entry) / avg_entry * current_position * total_qty * leverage
                         # pnl -= pnl* self.fee
                         self.trade_records.append({
-                            'entry_idx': entry_idx,
-                            'exit_idx': current_idx,
+                            'average_entry': avg_entry,
+                            'exit_price': exit_price,
+                            'total_qty': total_qty,
                             'pnl': pnl,
-                            'position': current_position
+                            'position': current_position,
+                            'exit_idx': current_idx,
                         })
+                        realized_pnl += pnl
                         current_position = 0
                         risk_manager = None
                         entry_price = None
@@ -149,14 +169,33 @@ class Backtester:
                     pnl = (exit_price - avg_entry) / avg_entry * current_position * total_qty * leverage
                     # pnl -= pnl* self.fee
                     self.trade_records.append({
-                        'entry_idx': entry_idx,
-                        'exit_idx': current_idx,
+                        'average_entry': avg_entry,
+                        'exit_price': exit_price,
+                        'total_qty': total_qty,
                         'pnl': pnl,
-                        'position': current_position
+                        'position': current_position,
+                        'exit_idx': current_idx,
                     })
+                    realized_pnl += pnl
                     current_position = 0
                     risk_manager = None
                     entry_price = None
+
+            # Record equity curve for this minute
+            unrealized_pnl = 0.0
+            if current_position != 0 and risk_manager is not None:
+                current_price = new_1m['close']
+                total_qty = sum(p['qty'] for p in risk_manager.positions)
+                avg_entry = sum(p['price'] * p['qty'] for p in risk_manager.positions) / total_qty
+                unrealized_pnl = (current_price - avg_entry) / avg_entry * current_position * total_qty * leverage
+            
+            self.equity_curve.append({
+                'timestamp': new_1m['timestamp'],
+                'idx': current_idx,
+                'realized_pnl': realized_pnl,
+                'unrealized_pnl': unrealized_pnl,
+                'total_pnl': realized_pnl + unrealized_pnl
+            })
 
             current_idx += 1
 
@@ -165,34 +204,29 @@ class Backtester:
             exit_price = df_1m['close'].iloc[-1]
             total_qty = sum(p['qty'] for p in risk_manager.positions)
             avg_entry = sum(p['price'] * p['qty'] for p in risk_manager.positions) / total_qty
-            pnl = (exit_price - avg_entry) / avg_entry * current_position * total_qty
-            pnl -= pnl* self.fee
+            pnl = (exit_price - avg_entry) / avg_entry * current_position * total_qty * leverage
+            # pnl -= pnl* self.fee
             self.trade_records.append({
-                'entry_idx': entry_idx,
-                'exit_idx': len(df_1m) - 1,
+                'average_entry': avg_entry,
+                'exit_price': exit_price,
+                'total_qty': total_qty,
                 'pnl': pnl,
-                'position': current_position
+                'position': current_position,
+                'exit_idx': len(df_1m) - 1,
             })
+            realized_pnl += pnl
 
         # save trade records into csv
         trade_df = pd.DataFrame(self.trade_records)
         trade_df.to_csv('output/trade_records.csv', index=False)
         return self.trade_records
 
-    def performance(self) -> Dict[str, Any]:
+    def performance(self, initial_amount: float = 500.0, **kwargs) -> Dict[str, Any]:
         if self.trade_records:
             if not self.trade_records:
                 return {'總報酬': 0, '年化報酬': 0, '最大回撤': 0, 'Sharpe Ratio': float('nan'), '交易次數': 0, '勝率': float('nan'), '平均單次盈虧': float('nan'), '最大單次獲利': float('nan'), '最大單次虧損': float('nan')}
+
             pnls = [t['pnl'] for t in self.trade_records]
-            equity = [0]
-            for pnl in pnls:
-                equity.append(equity[-1] + pnl)
-            total_return = equity[-1] - 1
-            periods = len(self.df_1m) / 252
-            annualized_return = (equity[-1]) ** (1 / periods) - 1 if periods > 0 and equity[-1] > 0 else -1
-            max_drawdown = ((pd.Series(equity).cummax() - pd.Series(equity)) / pd.Series(equity).cummax()).max()
-            std = pd.Series(pnls).std()
-            sharpe = pd.Series(pnls).mean() / std * (252 ** 0.5) if std > 0 else float('nan')
             trades = len(pnls)
             win_trades = sum(1 for p in pnls if p > 0)
             lose_trades = sum(1 for p in pnls if p < 0)
@@ -200,6 +234,31 @@ class Backtester:
             avg_pnl = sum(pnls) / trades if trades > 0 else float('nan')
             max_win = max(pnls) if pnls else float('nan')
             max_loss = min(pnls) if pnls else float('nan')
+
+            if self.equity_curve:
+                equity_df = pd.DataFrame(self.equity_curve)
+                equity_value = initial_amount + equity_df['total_pnl']
+                total_return = equity_value.iloc[-1] - initial_amount
+
+                duration_years = (equity_df['timestamp'].iloc[-1] - equity_df['timestamp'].iloc[0]).total_seconds() / (365 * 24 * 3600)
+                annualized_return = (equity_value.iloc[-1] / initial_amount) ** (1 / duration_years) - 1 if duration_years > 0 else float('nan')
+
+                max_drawdown = ((equity_value.cummax() - equity_value) / equity_value.cummax()).max()
+
+                returns = equity_value.pct_change().dropna()
+                std = returns.std()
+                periods_per_year = 365 * 24 * 60
+                sharpe = returns.mean() / std * (periods_per_year ** 0.5) if std > 0 else float('nan')
+            else:
+                equity = [0]
+                for pnl in pnls:
+                    equity.append(equity[-1] + pnl)
+                total_return = equity[-1]
+                annualized_return = float('nan')
+                equity_series = pd.Series(equity)
+                max_drawdown = (equity_series.cummax() - equity_series).max()
+                std = pd.Series(pnls).std()
+                sharpe = pd.Series(pnls).mean() / std if std > 0 else float('nan')
         else:
             if self.results is None:
                 raise ValueError('請先執行 run()')
@@ -237,30 +296,21 @@ class Backtester:
             '最大單次虧損': max_loss
         }
 
-    def plot_equity_curve(self, filename: str = 'output/equity_curve.png'):
-        if not self.trade_records:
-            print("沒有交易記錄，無法繪圖")
+    def plot_equity_curve(self, initial_amount: float = 1000, base_qty: float = 1, leverage: float = 1, symbol: str = "BTC-USDT", filename: str = "output/equity_curve.png"):
+        if not self.equity_curve:
+            print("沒有權益曲線數據，無法繪圖")
             return
         
-        rms = RiskManager()
-        # max_qty = rms._max_qty()
-        max_qty = 1000
-
-        pnls = [t['pnl'] for t in self.trade_records]
-        equity = [0]
-        timestamps = [self.df_1m.iloc[0]['timestamp']]
-        for i, pnl in enumerate(pnls):
-            new_equity = equity[-1] + pnl
-            equity.append(new_equity/max_qty)
-            timestamps.append(self.df_1m.iloc[self.trade_records[i]['exit_idx']]['timestamp'])
-
-        plt.figure(figsize=(10, 6))
-        plt.plot(timestamps, equity, label='Equity Curve')
-        plt.title('Equity Curve Over Time')
+        timestamps = [ec['timestamp'] for ec in self.equity_curve]
+        total_pnls = [ec['total_pnl'] / initial_amount * 100 for ec in self.equity_curve]
+        
+        plt.figure(figsize=(12, 6))
+        plt.plot(timestamps, total_pnls, label='Total PnL', linewidth=1)
+        plt.title(f'Equity Curve - {symbol} (Leverage: {leverage}x, Base Qty: {base_qty})')
         plt.xlabel('Time')
-        plt.ylabel('Equity')
+        plt.ylabel('PnL (%)')
         plt.legend()
-        plt.grid(True)
+        plt.grid(True, alpha=0.3)
         plt.xticks(rotation=45)
         plt.tight_layout()
         plt.savefig(filename)

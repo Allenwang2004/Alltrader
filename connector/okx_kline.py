@@ -449,10 +449,10 @@ def fetch_futures_klines(
 
 if __name__ == "__main__":
     # Example usage
-    fetcher = create_futures_fetcher()
-    kline = fetcher.fetch_klines(
+    # fetcher = create_futures_fetcher()
+    kline = fetch_futures_klines(
         symbol="BTC-USDT",
-        interval="1m",
-        limit=5
+        interval="1H",
+        limit=100
     )
     print(kline)

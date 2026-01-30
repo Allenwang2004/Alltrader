@@ -62,6 +62,16 @@ bt = Backtester(df, MACDStrategy)
 results = bt.run()
 ```
 
+## Backtest UI
+
+Run the Streamlit UI for backtesting and performance charts:
+
+```bash
+streamlit run app/backtest_ui.py
+```
+
+In the UI, upload a 1m CSV (must contain `timestamp` or `ts` column), select a strategy, set parameters, and click "執行回測".
+
 ## Online Trading Architecture
 
 The online trading runner uses a single state machine (`trading_main`) to ensure only one component is active at a time:
