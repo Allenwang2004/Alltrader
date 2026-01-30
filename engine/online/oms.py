@@ -1,15 +1,42 @@
 import time
 from connector.okx_order import OrderSide, PositionSide
 
-def wait_order_filled(order_client, symbol, order_id, poll_interval=1, timeout=30):
-    start = time.time()
-    while time.time() - start < timeout:
-        info = order_client.get_order(symbol, order_id=order_id)
-        status = info.get('data', [{}])[0].get('state')
-        if status in ('filled', 'partially_filled', 'success', '2'):  # 2=成交
-            return True
-        time.sleep(poll_interval)
-    return False
+def wait_order_filled(order_client, symbol, order_id, poll_interval=1, timeout=30, cancel_on_timeout=True):
+	start = time.time()
+	while time.time() - start < timeout:
+		try:
+			info = order_client.get_order(symbol, order_id=order_id)
+			status = info.get('data', [{}])[0].get('state')
+
+			# OKX state examples: live/partially_filled/filled/canceled
+			if status in ('filled', 'success', '2'):  # 2=成交
+				return True
+			if status in ('canceled', 'cancelled', 'failed', 'rejected'):
+				return False
+		except Exception as e:
+			print(f"[OMS] get_order failed: {e}")
+
+		time.sleep(poll_interval)
+
+	if cancel_on_timeout:
+		try:
+			order_client.cancel_order(symbol, order_id=order_id)
+			print(f"[OMS] order timeout, cancelled: {order_id}")
+		except Exception as e:
+			print(f"[OMS] cancel order failed: {e}")
+	return False
+
+
+def _normalize_position_side(position_side):
+	if isinstance(position_side, PositionSide):
+		return position_side
+	if isinstance(position_side, str):
+		side = position_side.lower()
+		if side == 'long':
+			return PositionSide.LONG
+		if side == 'short':
+			return PositionSide.SHORT
+	raise ValueError(f"Invalid position_side: {position_side}")
 
 class OrderManager:
 	def __init__(self, client, max_retries=3, retry_delay=2):
@@ -52,6 +79,7 @@ class OrderManager:
 		raise Exception("空單下單失敗，已重試多次")
 
 	def close_position(self, symbol, qty, position_side):
+		position_side = _normalize_position_side(position_side)
 		for attempt in range(self.max_retries):
 			try:
 				resp = self.client.place_futures_market_order(

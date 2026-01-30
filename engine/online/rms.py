@@ -60,7 +60,9 @@ class RiskManager:
         if layer_idx >= len(self.layers):
             return False
 
-        _, reverse_pct = self.layers[layer_idx]
+        # _, reverse_pct = self.layers[layer_idx]
+
+        reverse_pct = sum(self.layers[i][1] for i in range(0, layer_idx + 1))
 
         if position == 1:  # long
             return (entry_price - current_price) / entry_price >= reverse_pct

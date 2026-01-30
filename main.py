@@ -8,11 +8,8 @@ from textual.containers import Container, Horizontal
 from connector.okx_order import OKXOrderClient
 from connector import binance_order
 import threading
-from connector.okx_kline import OKXKlineFetcher
-from datawarehouse.kline_db import insert_kline
 from strategy.longstrategy import LongStrategy
 from engine.trader import trading_main
-import pandas as pd
 
 class LogPanel(Static):
     def __init__(self, text: str = "", max_lines: int = 200, **kwargs):
@@ -38,14 +35,7 @@ class MainMenu(Static):
     def compose(self) -> ComposeResult:
         yield Button("Account Info", id="account")
         yield Button("Select Strategy", id="strategy")
-        yield Button("Record Symbol", id="record_symbol")
         yield Button("Exit", id="exit")
-
-class RecordSymbolPanel(Static):
-    def compose(self) -> ComposeResult:
-        yield Input(placeholder="Symbol (like BTC-USDT)", id="symbol_input")
-        yield Input(placeholder="Interval (like 1m, 5m, 1H)", id="interval_input")
-        yield Button("Start Recording", id="start_recording")
 
 class StrategySelect(Static):
     def compose(self) -> ComposeResult:
@@ -120,8 +110,6 @@ class TradeApp(App):
             self.query_account()
         elif btn_id == "strategy":
             self.select_strategy()
-        elif btn_id == "record_symbol":
-            self.record_symbol_panel()
         elif btn_id == "switch":
             self.switch_exchange()
         elif btn_id == "rekey":
@@ -132,70 +120,6 @@ class TradeApp(App):
             self.confirm_exchange()
         elif btn_id == "confirm_strategy":
             self.confirm_strategy()
-        elif btn_id == "start_recording":
-            self.start_recording_symbol()
-
-    def record_symbol_panel(self):
-        left = self.query_one("#left")
-        left.remove_children()
-        left.mount(RecordSymbolPanel())
-
-    def start_recording_symbol(self):
-        symbol = self.query_one("#symbol_input", Input).value.strip()
-        interval = self.query_one("#interval_input", Input).value.strip()
-        log = self.query_one(LogPanel)
-        if not symbol or not interval:
-            log.write("請輸入 symbol 與 interval")
-            return
-        fetcher = OKXKlineFetcher(market_type="futures")
-        klines = fetcher.fetch_klines(symbol=symbol, interval=interval, limit=300)
-        df = pd.DataFrame(klines, columns=["timestamp", "open_price", "high_price", "low_price", "close_price", "volume"])
-        df.rename(columns={
-            "open_price": "open",
-            "high_price": "high",
-            "low_price": "low",
-            "close_price": "close",
-            "volume": "volume",
-        }, inplace=True)
-        for _, row in df.iterrows():
-            insert_kline(symbol, interval, row.to_dict())
-        log.write(f"inserted {len(df)} historical klines for {symbol} {interval}")
-        def record_loop():
-            import time
-            last_ts = df.index[-1]
-            while True:
-                try:
-                    klines = fetcher.fetch_klines(symbol=symbol, interval=interval, limit=1)
-                    df = pd.DataFrame(klines, columns=["timestamp", "open_price", "high_price", "low_price", "close_price", "volume"])
-                    df.rename(columns={
-                        "open_price": "open",
-                        "high_price": "high",
-                        "low_price": "low",
-                        "close_price": "close",
-                        "volume": "volume",
-                    }, inplace=True)
-                    ts = df['timestamp'].iloc[-1]
-                    if ts != last_ts:
-                        insert_kline(symbol, interval, df.iloc[-1].to_dict())
-                        last_ts = ts
-                        log.write(f"已存入 {symbol} {interval} 新K線: {ts}")
-                    else:
-                        log.write("尚無新K線")
-                except Exception as e:
-                    log.write(f"紀錄失敗: {e}")
-                # 休息到下個 interval
-                if interval.endswith('m'):
-                    sleep_sec = int(interval[:-1]) * 60
-                elif interval.endswith('H'):
-                    sleep_sec = int(interval[:-1]) * 3600
-                else:
-                    sleep_sec = 60
-                time.sleep(sleep_sec)
-        threading.Thread(target=record_loop, daemon=True).start()
-        log.write(f"開始紀錄 {symbol} {interval} K線到 sqlite ...")
-        left = self.query_one("#left")
-        left.remove_children()
-        left.mount(MainMenu(id="main_menu"))
 
     def select_strategy(self):
         main = self.query_one("#left")

@@ -883,8 +883,8 @@ def create_futures_client(
 if __name__ == "__main__":
     client = create_futures_client()
     # Example: Place a futures market order
-    # response = client.get_account_info()
-    # print(response)
+    response = client.get_account_info()
+    print(response)
     # response = client.place_futures_market_order(
     #     symbol="BTC-USDT",
     #     side=OrderSide.SELL,
@@ -894,5 +894,5 @@ if __name__ == "__main__":
     # )
     # print(response)
     # Example: Get futures positions
-    response = client.get_futures_positions("BTC-USDT")
-    print(response)
+    # response = client.get_futures_positions("BTC-USDT")
+    # print(response)
