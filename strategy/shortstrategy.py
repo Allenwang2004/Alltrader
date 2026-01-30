@@ -26,4 +26,4 @@ class ShortStrategy(Strategy):
 
         entry = macd_cond & pattern & ema_cond
         signal = (-entry).astype(int)
-        return signal.iloc[-1]
+        return -signal.iloc[-1]

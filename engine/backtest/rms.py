@@ -3,6 +3,7 @@ class RiskManager:
     def __init__(self):
         # layer_index: (multiplier, reverse_pct)）
         self.layers = [
+            (1, 0.00),
             (1, 0.01),   # #2
             (2, 0.02),   # #3
             (4, 0.02),   # #4
@@ -14,7 +15,7 @@ class RiskManager:
             (15, 0.07),  # #10
             (15, 0.04),  # #11
             (15, 0.04),  # #12
-            (20, 0.10),  # #13
+            (20, 0.1),  # #13
         ]
 
         #（TP %, trailing %）
@@ -59,17 +60,24 @@ class RiskManager:
         if layer_idx >= len(self.layers):
             return False
 
-        _, reverse_pct = self.layers[layer_idx]
+        # _, reverse_pct = self.layers[layer_idx]
+
+        reverse_pct = sum(self.layers[i][1] for i in range(0, layer_idx + 1))
 
         if position == 1:  # long
+            # print("檢查加倉條件:", (entry_price - current_price) / entry_price, "需要達到:", reverse_pct)
             return (entry_price - current_price) / entry_price >= reverse_pct
         else:  # short
+            # print("檢查加倉條件:", (current_price - entry_price) / entry_price, "需要達到:", reverse_pct)
             return (current_price - entry_price) / entry_price >= reverse_pct
 
     def _avg_price(self):
         total = sum(p["price"] * p["qty"] for p in self.positions)
         qty = sum(p["qty"] for p in self.positions)
         return total / qty
+    
+    def _max_qty(self):
+        return sum([layer[0] for layer in self.layers])
 
     def _first_last_avg(self):
         first = self.positions[0]

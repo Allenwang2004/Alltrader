@@ -62,7 +62,7 @@ if __name__ == "__main__":
         raise ValueError(f"Symbol not found in markets: {symbol}. 你可印 ex.symbols 找正確 symbol。")
 
     now = ex.milliseconds()
-    since = now - 90 * 24 * 60 * 60 * 1000
+    since = now - 360 * 24 * 60 * 60 * 1000
 
     df = fetch_ohlcv_paginated(
         exchange=ex,
@@ -71,7 +71,7 @@ if __name__ == "__main__":
         since_ms=since,
         until_ms=None,
         limit=300,
-        max_candles=50000,
+        max_candles=500000,
     )
 
     df.to_csv("data/BTC_USDT_1m_okx_swap.csv", index=False)
