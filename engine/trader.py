@@ -121,11 +121,11 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
             current_price = ws.get_last_price()
             print(f"[RMS] entry={entry_price} price={current_price} pos={position}")
             if risk_manager.should_add_position(entry_price, current_price, position):
-                qty = risk_manager.add_position(current_price, base_qty=qty)
-                if qty:
-                    print(f"[RMS] adding position, qty={qty}")
+                add_qty = risk_manager.get_next_qty(base_qty=qty)
+                if add_qty:
+                    print(f"[RMS] adding position, qty={add_qty}")
                     oms_action = 'long' if position == 1 else 'short'
-                    oms_qty = qty
+                    oms_qty = add_qty
                     oms_price = current_price
                     state_machine = TradingState.OMS
                     continue
@@ -133,7 +133,8 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
             if risk_manager.check_take_profit(current_price, position):
                 print("[RMS] taking profit, closing position")
                 oms_action = 'close_long' if position == 1 else 'close_short'
-                oms_qty = qty  # 假設全平
+                total_qty = sum(p["qty"] for p in risk_manager.positions)
+                oms_qty = total_qty
                 oms_price = current_price
                 state_machine = TradingState.OMS
                 continue

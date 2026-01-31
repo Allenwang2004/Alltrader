@@ -50,10 +50,20 @@ class RiskManager:
         multiplier, _ = self.layers[layer_idx]
         qty = base_qty * multiplier
         self.positions.append({"price": price, "qty": qty})
+        print(f"[RMS] add_position layer={layer_idx + 1} price={price} qty={qty}")
         return qty
+
+    def get_next_qty(self, base_qty):
+        layer_idx = len(self.positions)
+        if layer_idx >= len(self.layers):
+            return None
+
+        multiplier, _ = self.layers[layer_idx]
+        return base_qty * multiplier
 
     def should_add_position(self, entry_price, current_price, position):
         if not self.positions:
+            print("[RMS] should_add_position: no positions yet -> True")
             return True
 
         layer_idx = len(self.positions)
@@ -65,9 +75,21 @@ class RiskManager:
         reverse_pct = sum(self.layers[i][1] for i in range(0, layer_idx + 1))
 
         if position == 1:  # long
-            return (entry_price - current_price) / entry_price >= reverse_pct
+            drawdown = (entry_price - current_price) / entry_price
+            should_add = drawdown >= reverse_pct
+            print(
+                f"[RMS] should_add_position long layer={layer_idx + 1} entry={entry_price} price={current_price} "
+                f"drawdown={drawdown:.6f} threshold={reverse_pct:.6f} -> {should_add}"
+            )
+            return should_add
         else:  # short
-            return (current_price - entry_price) / entry_price >= reverse_pct
+            drawup = (current_price - entry_price) / entry_price
+            should_add = drawup >= reverse_pct
+            print(
+                f"[RMS] should_add_position short layer={layer_idx + 1} entry={entry_price} price={current_price} "
+                f"drawup={drawup:.6f} threshold={reverse_pct:.6f} -> {should_add}"
+            )
+            return should_add
 
     def _avg_price(self):
         total = sum(p["price"] * p["qty"] for p in self.positions)
