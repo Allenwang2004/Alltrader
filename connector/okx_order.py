@@ -755,6 +755,55 @@ class OKXOrderClient:
 
         return self._make_signed_request("POST", self.FUTURES_LEVERAGE_ENDPOINT, data=data)
 
+    def set_futures_leverage_with_pos_side(
+        self,
+        symbol: str,
+        leverage: int,
+        margin_mode: str = "cross",
+        position_side: Optional[Union[str, PositionSide]] = None
+    ) -> Dict[str, Any]:
+        """
+        Set leverage for a futures symbol with optional position side (hedge mode).
+
+        Args:
+            symbol (str): Trading symbol
+            leverage (int): Leverage (1-125)
+            margin_mode (str): Margin mode ('cross' or 'isolated')
+            position_side (str): Position side ('long', 'short', 'net')
+
+        Returns:
+            Dict: Leverage update response
+        """
+        if self.market_type != "futures":
+            raise ValueError("This method is only available for futures market")
+
+        inst_id = self._get_inst_id(symbol)
+
+        if not 1 <= leverage <= 125:
+            raise ValueError("Leverage must be between 1 and 125")
+
+        if margin_mode not in ["cross", "isolated"]:
+            raise ValueError("margin_mode must be 'cross' or 'isolated'")
+
+        data = {
+            "instId": inst_id,
+            "lever": str(leverage),
+            "mgnMode": margin_mode
+        }
+
+        if position_side is not None:
+            ps = position_side.value if isinstance(position_side, PositionSide) else str(position_side).lower()
+            if ps not in ["long", "short", "net"]:
+                raise ValueError("position_side must be 'long', 'short', or 'net'")
+            data["posSide"] = ps
+
+        logger.info(
+            f"Setting leverage for {inst_id} to {leverage}x ({margin_mode})"
+            + (f" posSide={data.get('posSide')}" if "posSide" in data else "")
+        )
+
+        return self._make_signed_request("POST", self.FUTURES_LEVERAGE_ENDPOINT, data=data)
+
     def set_futures_margin_mode(
         self,
         symbol: str,
@@ -896,3 +945,4 @@ if __name__ == "__main__":
     # Example: Get futures positions
     # response = client.get_futures_positions("BTC-USDT")
     # print(response)
+    

@@ -76,15 +76,17 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
             oms_qty = qty
             oms_price = current_price
         elif state_machine == TradingState.OMS:
+            prev_position = position
+            total_qty = sum(p["qty"] for p in risk_manager.positions)
             print(f"[OMS] execute order: {oms_action}")
             if oms_action == 'long':
                 resp = order_manager.open_long(symbol, oms_qty)
             elif oms_action == 'short':
                 resp = order_manager.open_short(symbol, oms_qty)
             elif oms_action == 'close_long':
-                resp = order_manager.close_position(symbol, oms_qty, position_side='long')
+                resp = order_manager.close_position(symbol, total_qty, position_side='long')
             elif oms_action == 'close_short':
-                resp = order_manager.close_position(symbol, oms_qty, position_side='short')
+                resp = order_manager.close_position(symbol, total_qty, position_side='short')
             else:
                 resp = None
             order_id = None
@@ -102,16 +104,21 @@ def trading_main(strategy_cls: Type, api_key: str, api_secret: str, passphrase: 
                 state_machine = TradingState.SIGNAL
                 continue
             if oms_action in ('long', 'short'):
-                position = 1 if oms_action == 'long' else -1
-                entry_price = oms_price
-                risk_manager.reset()
+                if prev_position == 0:
+                    position = 1 if oms_action == 'long' else -1
+                    entry_price = oms_price
+                    risk_manager.reset()
+                    risk_manager.add_position(entry_price, base_qty=oms_qty)
+                else:
+                    # adding to existing position
+                    risk_manager.add_position(oms_price, base_qty=oms_qty)
                 state_machine = TradingState.RMS
             elif oms_action.startswith('close'):
                 position = 0
                 entry_price = None
                 state_machine = TradingState.SIGNAL
         elif state_machine == TradingState.RMS:
-            current_price = ws.get_latest_price()
+            current_price = ws.get_last_price()
             print(f"[RMS] entry={entry_price} price={current_price} pos={position}")
             if risk_manager.should_add_position(entry_price, current_price, position):
                 qty = risk_manager.add_position(current_price, base_qty=qty)

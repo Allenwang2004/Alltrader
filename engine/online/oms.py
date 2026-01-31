@@ -1,5 +1,14 @@
 import time
-from connector.okx_order import OrderSide, PositionSide
+from connector.okx_order import OrderSide, PositionSide, OKXOrderError
+
+def _format_okx_error(err: Exception) -> str:
+	if isinstance(err, OKXOrderError):
+		parts = [f"code={err.code}", f"message={err.message}"]
+		resp = err.response or {}
+		if resp:
+			parts.append(f"response={resp}")
+		return " | ".join(parts)
+	return str(err)
 
 def wait_order_filled(order_client, symbol, order_id, poll_interval=1, timeout=30, cancel_on_timeout=True):
 	start = time.time()
@@ -57,7 +66,8 @@ class OrderManager:
 				print(f"下多單成功: {resp}")
 				return resp
 			except Exception as e:
-				print(f"下多單失敗: {e}, 重試 {attempt+1}/{self.max_retries}")
+				err_msg = _format_okx_error(e)
+				print(f"下多單失敗: {err_msg}, 重試 {attempt+1}/{self.max_retries}")
 				time.sleep(self.retry_delay)
 		raise Exception("多單下單失敗，已重試多次")
 
@@ -74,7 +84,8 @@ class OrderManager:
 				print(f"下空單成功: {resp}")
 				return resp
 			except Exception as e:
-				print(f"下空單失敗: {e}, 重試 {attempt+1}/{self.max_retries}")
+				err_msg = _format_okx_error(e)
+				print(f"下空單失敗: {err_msg}, 重試 {attempt+1}/{self.max_retries}")
 				time.sleep(self.retry_delay)
 		raise Exception("空單下單失敗，已重試多次")
 
@@ -92,7 +103,8 @@ class OrderManager:
 				print(f"平倉成功: {resp}")
 				return resp
 			except Exception as e:
-				print(f"平倉失敗: {e}, 重試 {attempt+1}/{self.max_retries}")
+				err_msg = _format_okx_error(e)
+				print(f"平倉失敗: {err_msg}, 重試 {attempt+1}/{self.max_retries}")
 				time.sleep(self.retry_delay)
 		raise Exception("平倉失敗，已重試多次")
 

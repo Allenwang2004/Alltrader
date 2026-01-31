@@ -35,6 +35,7 @@ class MainMenu(Static):
     def compose(self) -> ComposeResult:
         yield Button("Account Info", id="account")
         yield Button("Select Strategy", id="strategy")
+        yield Button("Set Leverage", id="set_leverage")
         yield Button("Exit", id="exit")
 
 class StrategySelect(Static):
@@ -45,6 +46,14 @@ class StrategySelect(Static):
         yield Input(placeholder="Symbol (如 BTC-USDT)", id="symbol_input")
         yield Select(options=options, prompt="Select Strategy", id="strategy_select")
         yield Button("Confirm Strategy", id="confirm_strategy")
+
+class LeverageSelect(Static):
+    def compose(self) -> ComposeResult:
+        yield Input(placeholder="Symbol (如 BTC-USDT)", id="lev_symbol")
+        yield Input(placeholder="Leverage (OKX, e.g. 5)", id="leverage")
+        yield Select(options=[("cross", "cross"), ("isolated", "isolated")], prompt="Margin Mode (OKX)", id="margin_mode")
+        yield Select(options=[("auto", "auto"), ("long", "long"), ("short", "short"), ("net", "net")], prompt="Position Side (OKX)", id="pos_side")
+        yield Button("Apply Leverage", id="confirm_leverage")
 
 class ExchangeSelect(Static):
     def compose(self) -> ComposeResult:
@@ -88,6 +97,9 @@ class TradeApp(App):
         self.api_key = None
         self.api_secret = None
         self.passphrase = None
+        self.leverage = None
+        self.margin_mode = None
+        self.pos_side = None
         self.okx_client = None
         self.binance_client = None
         self.account_info = None
@@ -110,6 +122,8 @@ class TradeApp(App):
             self.query_account()
         elif btn_id == "strategy":
             self.select_strategy()
+        elif btn_id == "set_leverage":
+            self.show_leverage()
         elif btn_id == "switch":
             self.switch_exchange()
         elif btn_id == "rekey":
@@ -120,6 +134,8 @@ class TradeApp(App):
             self.confirm_exchange()
         elif btn_id == "confirm_strategy":
             self.confirm_strategy()
+        elif btn_id == "confirm_leverage":
+            self.confirm_leverage()
 
     def select_strategy(self):
         main = self.query_one("#left")
@@ -205,6 +221,43 @@ class TradeApp(App):
         left = self.query_one("#left")
         left.remove_children()
         left.mount(MainMenu(id="main_menu"))
+
+    def show_leverage(self):
+        main = self.query_one("#left")
+        main.remove_children()
+        main.mount(LeverageSelect())
+
+    def confirm_leverage(self):
+        log = self.query_one(LogPanel)
+        if self.exchange != "okx" or not self.okx_client:
+            log.write("Only OKX supports leverage setting here.")
+            return
+        symbol_input = self.query_one("#lev_symbol", Input).value.strip()
+        symbol = symbol_input or getattr(self, "symbol", None)
+        if not symbol:
+            log.write("請先輸入 symbol")
+            return
+        leverage_raw = self.query_one("#leverage", Input).value
+        if not leverage_raw.strip().isdigit():
+            log.write("Leverage 必須是整數")
+            return
+        self.leverage = int(leverage_raw)
+        self.margin_mode = self.query_one("#margin_mode", Select).value
+        self.pos_side = self.query_one("#pos_side", Select).value
+        try:
+            pos_side = None if self.pos_side in (None, "", "auto") else self.pos_side
+            self.okx_client.set_futures_leverage_with_pos_side(
+                symbol=symbol,
+                leverage=self.leverage,
+                margin_mode=self.margin_mode or "cross",
+                position_side=pos_side
+            )
+            log.write(f"Leverage set: {self.leverage}x mode={self.margin_mode or 'cross'} posSide={pos_side or 'auto'}")
+            main = self.query_one("#left")
+            main.remove_children()
+            main.mount(MainMenu(id="main_menu"))
+        except Exception as e:
+            log.write(f"Set leverage failed: {e}")
 
     def exit(self):
         self.exit()
